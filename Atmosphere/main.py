@@ -1,49 +1,57 @@
-import matplotlib.pyplot as plt
-from atmosphere_plot import plot_atmosphere
+"""
+Main entry point for Atmosphere (Python port)
 
-if __name__ == "__main__":
-    # Simple Earth-like example (you can replace with Table 7.1 values)
-    temperature_pairs = [
-        (0.0, 288.0),
-        (11000.0, 216.0),
-        (20000.0, 216.0),
-        (32000.0, 228.0),
-        (47000.0, 270.0),
-        (51000.0, 270.0),
-        (71000.0, 214.0),
-        (84852.0, 186.0),
+User sets parameters here; they can overwrite the example values.
+"""
+
+from driver_atmosphere import AtmosphereParameters, AtmosphereModel, extract_output
+from plot_atmosphere import plot_atmosphere
+
+
+def main():
+    # Example: Earth's atmosphere, rough values
+    planet_name = "Earth"
+    g_accel = 9.81          # m/s^2
+    mu = 28.97              # mean molecular weight ~ air (proton masses)
+    p0 = 1.013e5            # surface pressure ~ 1 atm (Pa)
+
+    # Simple temperature profile: (altitude, temperature) pairs
+    # You can replace these with more detailed data (e.g., from Table 7.1).
+    h_points = [
+        0.0,
+        5_000.0,
+        10_000.0,
+        20_000.0,
+        30_000.0,
+        40_000.0,
+    ]
+    T_points = [
+        288.0,  # ~15°C at sea level
+        255.0,
+        223.0,
+        217.0,
+        226.0,
+        250.0,
     ]
 
-    # Example measured data arrays (altitude in m, pressure in Pa, density in kg/m^3)
-    # Replace with your actual book data if desired.
-    measured_alt = [0.0, 10000.0, 20000.0, 30000.0, 40000.0, 50000.0, 60000.0, 70000.0]
-    measured_pressure = [1.0e5, 2.6e4, 5.5e3, 1.2e3, 3.0e2, 8.0e1, 2.0e1, 5.0]
-    measured_density = [1.2, 0.41, 0.088, 0.018, 0.004, 0.001, 3e-4, 1e-4]
+    # Choose what to output: "Pressure", "Density", or "Temperature"
+    output_type = "Pressure"
 
-    # Pressure plot with overlay
-    fig_p, ax_p = plot_atmosphere(
-        planet_name="Earth",
-        g_accel=9.81,
-        mu=28.97,  # mean molecular weight ~ air
-        p0=1.013e5,
-        temperature_pairs=temperature_pairs,
-        output_type="Pressure",
-        measured_alt=measured_alt,
-        measured_values=measured_pressure,
-        log_y=True,
+    params = AtmosphereParameters(
+        planet_name=planet_name,
+        g_accel=g_accel,
+        mu=mu,
+        p0=p0,
+        h_points=h_points,
+        T_points=T_points,
+        output_type=output_type,
     )
 
-    # Density plot with overlay
-    fig_rho, ax_rho = plot_atmosphere(
-        planet_name="Earth",
-        g_accel=9.81,
-        mu=28.97,
-        p0=1.013e5,
-        temperature_pairs=temperature_pairs,
-        output_type="Density",
-        measured_alt=measured_alt,
-        measured_values=measured_density,
-        log_y=True,
-    )
+    model = AtmosphereModel(params)
+    result = model.run()
+    curve_data = extract_output(result)
+    plot_atmosphere(curve_data)
 
-    plt.show()
+
+if __name__ == "__main__":
+    main()
