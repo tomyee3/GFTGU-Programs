@@ -1,32 +1,20 @@
-"""
-plot_earthorbit.py
-
-Plotting routine for EarthOrbit.
-Displays both the Earth's surface and the projectile trajectory.
-"""
-
+# plot_mercpert.py
 import matplotlib.pyplot as plt
 
+def plot_mercpert(data):
+    xsSun, ysSun = data["sun"]
+    xsPlanet, ysPlanet = data["planet"]
+    xsMerc, ysMerc = data["mercury"]
 
-def plot_earth_orbit(xs, ys, xEarth, yEarth):
-    """
-    Plot the Earth and the projectile trajectory.
-    Uses equal axis scaling, as recommended in Triana's SGTGrapher.
-    """
-    plt.figure(figsize=(8, 8))
+    plt.figure(figsize=(8,8))
+    plt.plot(xsSun, ysSun, 'r-', label="Sun")
+    plt.plot(xsPlanet, ysPlanet, 'g-', label="Planet")
+    plt.plot(xsMerc, ysMerc, 'b-', label="Mercury")
 
-    # Earth surface
-    plt.plot(xEarth, yEarth, linestyle="--", color="blue",
-             label="Earth surface")
-
-    # Trajectory
-    plt.plot(xs, ys, color="red", linewidth=2,
-             label="Projectile trajectory")
-
-    plt.xlabel("x (meters)")
-    plt.ylabel("y (meters)")
-    plt.title("EarthOrbit — Attempting to Achieve Orbit")
-    plt.axis("equal")
-    plt.grid(True)
+    plt.xlabel("x (m)")
+    plt.ylabel("y (m)")
+    plt.title("MercPert orbits (non‑RK45)")
     plt.legend()
+    plt.axis('equal')
+    plt.grid(True)
     plt.show()
