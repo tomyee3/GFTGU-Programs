@@ -1,102 +1,120 @@
 """
 MercPert driver module.
 
-Solves the restricted three-body problem using a fixed-step RK4 integrator.
-Produces structured output for plotting.
+Integrates Mercury's orbit in the restricted three-body (Sun + Planet + Mercury)
+problem using scipy.integrate.solve_ivp with method='RK45'.
+
+The binary members move on analytically prescribed circular orbits; Mercury is
+a Newtonian test particle.  After integration the binary positions are
+reconstructed at every output time point from the analytical formulae so that
+all three trajectories can be plotted.
 """
 
-from dataclasses import dataclass
+import numpy as np
+from dataclasses import dataclass, field
 from typing import List
 
-from physics_mercpert import mercpert_derivatives
+from scipy.integrate import solve_ivp
 
+from physics_mercpert import (
+    mercpert_rhs,
+    binary_parameters,
+    binary_positions,
+)
+
+
+# ── Output container ────────────────────────────────────────────────────────
 
 @dataclass
 class MercPertResult:
-    t: List[float]
-    x_sun: List[float]
-    y_sun: List[float]
-    x_planet: List[float]
-    y_planet: List[float]
-    x_merc: List[float]
-    y_merc: List[float]
+    """
+    Trajectory data for all three bodies at every output time point.
+
+    All position arrays are in metres; t is in seconds.
+    """
+    t:        List[float] = field(default_factory=list)
+    x_sun:    List[float] = field(default_factory=list)
+    y_sun:    List[float] = field(default_factory=list)
+    x_planet: List[float] = field(default_factory=list)
+    y_planet: List[float] = field(default_factory=list)
+    x_merc:   List[float] = field(default_factory=list)
+    y_merc:   List[float] = field(default_factory=list)
 
 
-def rk4_step(f, t, y, dt, *args):
-    k1, aux1 = f(t, y, *args)
-    y2 = [yi + 0.5 * dt * k1i for yi, k1i in zip(y, k1)]
-    k2, aux2 = f(t + 0.5 * dt, y2, *args)
-    y3 = [yi + 0.5 * dt * k2i for yi, k2i in zip(y, k2)]
-    k3, aux3 = f(t + 0.5 * dt, y3, *args)
-    y4 = [yi + dt * k3i for yi, k3i in zip(y, k3)]
-    k4, aux4 = f(t + dt, y4, *args)
-
-    y_next = [
-        yi + dt * (k1i + 2 * k2i + 2 * k3i + k4i) / 6.0
-        for yi, k1i, k2i, k3i, k4i in zip(y, k1, k2, k3, k4)
-    ]
-
-    # We only need auxiliary data from the final evaluation for plotting
-    return y_next, aux4
-
+# ── Integration driver ───────────────────────────────────────────────────────
 
 def run_mercpert(
-    m_sun_solar: float,
-    m_planet_solar: float,
+    m_sun_solar:       float,
+    m_planet_solar:    float,
     binary_separation: float,
-    x_init_merc: float,
-    y_init_merc: float,
-    vx_init_merc: float,
-    vy_init_merc: float,
-    dt: float,
-    max_steps: int,
+    x_init_merc:       float,
+    y_init_merc:       float,
+    vx_init_merc:      float,
+    vy_init_merc:      float,
+    t_max:             float,
+    dt_output:         float = 2000.0,
+    rtol:              float = 1e-9,
+    atol:              float = 1e-9,
 ) -> MercPertResult:
     """
-    Integrate Mercury's orbit in the MercPert setup.
+    Integrate Mercury's orbit using the RK45 adaptive integrator.
+
+    Parameters
+    ----------
+    m_sun_solar       : Sun mass in solar-mass units.
+    m_planet_solar    : Planet mass in solar-mass units.
+    binary_separation : Centre-to-centre binary separation [m].
+    x_init_merc       : Mercury initial x-position [m].
+    y_init_merc       : Mercury initial y-position [m].
+    vx_init_merc      : Mercury initial x-velocity [m/s].
+    vy_init_merc      : Mercury initial y-velocity [m/s].
+    t_max             : Total simulation time [s].
+    dt_output         : Output sampling interval [s].
+                        solve_ivp uses t_eval = np.arange(0, t_max, dt_output).
+                        The integrator's internal adaptive steps are independent
+                        of this spacing and are chosen automatically to satisfy
+                        the rtol/atol tolerances.
+    rtol              : Relative error tolerance for solve_ivp.
+    atol              : Absolute error tolerance for solve_ivp.
+
+    Returns
+    -------
+    MercPertResult with positions of all three bodies at every output point.
     """
 
-    t = 0.0
-    state = [x_init_merc, y_init_merc, vx_init_merc, vy_init_merc]
+    y0     = [x_init_merc, y_init_merc, vx_init_merc, vy_init_merc]
+    t_span = (0.0, t_max)
+    t_eval = np.arange(0.0, t_max, dt_output)
 
-    t_list = []
-    x_sun_list = []
-    y_sun_list = []
-    x_planet_list = []
-    y_planet_list = []
-    x_merc_list = []
-    y_merc_list = []
+    args = (m_sun_solar, m_planet_solar, binary_separation)
 
-    for _ in range(max_steps):
-        t_list.append(t)
-        # Get current auxiliary positions for plotting
-        _, (x_sun, y_sun, x_planet, y_planet) = mercpert_derivatives(
-            t, state, m_sun_solar, m_planet_solar, binary_separation
-        )
-        x_sun_list.append(x_sun)
-        y_sun_list.append(y_sun)
-        x_planet_list.append(x_planet)
-        y_planet_list.append(y_planet)
-        x_merc_list.append(state[0])
-        y_merc_list.append(state[1])
+    sol = solve_ivp(
+        mercpert_rhs,
+        t_span,
+        y0,
+        method='RK45',
+        t_eval=t_eval,
+        args=args,
+        rtol=rtol,
+        atol=atol,
+        dense_output=False,
+    )
 
-        # Advance one RK4 step
-        state, _ = rk4_step(
-            mercpert_derivatives,
-            t,
-            state,
-            dt,
-            m_sun_solar,
-            m_planet_solar,
-            binary_separation,
-        )
-        t += dt
+    if not sol.success:
+        raise RuntimeError(f"solve_ivp failed: {sol.message}")
+
+    # Reconstruct binary positions analytically at every output time
+    _, r_sun, r_planet, omega = binary_parameters(
+        m_sun_solar, m_planet_solar, binary_separation
+    )
+    xs, ys, xp, yp = binary_positions(sol.t, r_sun, r_planet, omega)
 
     return MercPertResult(
-        t=t_list,
-        x_sun=x_sun_list,
-        y_sun=y_sun_list,
-        x_planet=x_planet_list,
-        y_planet=y_planet_list,
-        x_merc=x_merc_list,
-        y_merc=y_merc_list,
+        t        = sol.t.tolist(),
+        x_sun    = xs.tolist(),
+        y_sun    = ys.tolist(),
+        x_planet = xp.tolist(),
+        y_planet = yp.tolist(),
+        x_merc   = sol.y[0].tolist(),
+        y_merc   = sol.y[1].tolist(),
     )

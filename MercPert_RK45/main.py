@@ -1,7 +1,8 @@
 """
 MercPert main module.
 
-Sets example parameters (which the user can edit) and runs the simulation.
+Sets example parameters (which the user can edit) and runs the simulation
+using the RK45 adaptive integrator via scipy.integrate.solve_ivp.
 """
 
 from physics_mercpert import AU
@@ -10,30 +11,42 @@ from plot_mercpert import plot_orbits
 
 
 def main():
-    # Example parameters inspired by Schutz's MercPert description
-    m_sun_solar = 1.0       # Sun mass in solar masses
-    m_planet_solar = 0.1    # ~100 Jupiter masses
-    binary_separation = 0.7 * AU  # separation between Sun and Planet (m)
+    # ── Binary system parameters ────────────────────────────────────────────
+    m_sun_solar       = 1.0        # Sun mass in solar masses
+    m_planet_solar    = 0.1        # ~100 Jupiter masses
+    binary_separation = 0.7 * AU   # centre-to-centre distance [m]
 
-    # Example initial conditions for Mercury (user can overwrite)
-    x_init_merc = 0.5 * AU
-    y_init_merc = 0.0
-    vx_init_merc = 0.0
-    vy_init_merc = 30000.0  # m/s, rough orbital speed scale
+    # ── Mercury initial conditions ──────────────────────────────────────────
+    x_init_merc  = 0.5 * AU        # initial x-position [m]
+    y_init_merc  = 0.0             # initial y-position [m]
+    vx_init_merc = 0.0             # initial x-velocity [m/s]
+    vy_init_merc = 30000.0         # initial y-velocity [m/s]
 
-    dt = 2000.0             # time step (s)
-    max_steps = 50000       # number of steps
+    # ── Integration parameters ──────────────────────────────────────────────
+    # t_max     : total simulation time in seconds
+    #             1e8 s ≈ 3.2 years  (equivalent to original 50000 × 2000 s)
+    # dt_output : spacing between recorded output points [s]
+    #             The RK45 integrator chooses its own internal step sizes to
+    #             satisfy rtol/atol; dt_output only controls how many points
+    #             are stored for plotting.
+    # rtol/atol : relative and absolute error tolerances for solve_ivp
+    t_max     = 1.0e8              # [s]
+    dt_output = 2000.0             # [s]
+    rtol      = 1e-9
+    atol      = 1e-9
 
     result = run_mercpert(
-        m_sun_solar=m_sun_solar,
-        m_planet_solar=m_planet_solar,
-        binary_separation=binary_separation,
-        x_init_merc=x_init_merc,
-        y_init_merc=y_init_merc,
-        vx_init_merc=vx_init_merc,
-        vy_init_merc=vy_init_merc,
-        dt=dt,
-        max_steps=max_steps,
+        m_sun_solar       = m_sun_solar,
+        m_planet_solar    = m_planet_solar,
+        binary_separation = binary_separation,
+        x_init_merc       = x_init_merc,
+        y_init_merc       = y_init_merc,
+        vx_init_merc      = vx_init_merc,
+        vy_init_merc      = vy_init_merc,
+        t_max             = t_max,
+        dt_output         = dt_output,
+        rtol              = rtol,
+        atol              = atol,
     )
 
     plot_orbits(result)

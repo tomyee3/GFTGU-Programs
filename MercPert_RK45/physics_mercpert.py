@@ -1,98 +1,114 @@
 """
-MercPert physics module (ported from Bernard F. Schutz, Gravity from the Ground Up).
+MercPert physics module.
 
-Encodes the restricted three-body problem:
-- A circular binary (Sun + massive planet) in the x–y plane.
-- A test particle ("Mercury") moving under their gravity.
-
-Only physical constants are literal numbers here.
+Defines physical constants, binary orbit geometry, and the right-hand-side
+function for Mercury's equation of motion.  The RHS is written to return a
+plain NumPy array so that it can be passed directly to
+scipy.integrate.solve_ivp.
 """
 
-import math
+import numpy as np
 
-# Physical constants
-G = 6.6726e-11          # Newton's gravitational constant (SI)
-M_SUN = 1.98847e30      # Solar mass (kg)
-AU = 1.495978707e11     # Astronomical unit (m)
+# ── Physical constants ──────────────────────────────────────────────────────
+G     = 6.6726e-11          # gravitational constant  [N m^2 kg^-2]
+M_SUN = 1.98847e30          # solar mass              [kg]
+AU    = 1.495978707e11      # astronomical unit       [m]
 
 
-def binary_parameters(m_sun_solar: float, m_planet_solar: float, binary_separation: float):
+# ── Binary orbit geometry ───────────────────────────────────────────────────
+
+def binary_parameters(m_sun_solar: float,
+                      m_planet_solar: float,
+                      binary_separation: float) -> tuple:
     """
-    Compute binary radii and angular velocity for a circular binary.
+    Compute Keplerian parameters for the Sun–Planet binary.
 
-    m_sun_solar, m_planet_solar: masses in units of solar masses.
-    binary_separation: distance between the two bodies (m).
+    Parameters
+    ----------
+    m_sun_solar      : Sun mass in solar-mass units.
+    m_planet_solar   : Planet mass in solar-mass units.
+    binary_separation: Centre-to-centre separation [m].
+
+    Returns
+    -------
+    k_gravity : G * M_sun_SI          [m^3 s^-2]
+    r_sun     : Sun's orbital radius about the barycentre   [m]
+    r_planet  : Planet's orbital radius about the barycentre [m]
+    omega     : Binary angular velocity  [rad s^-1]
     """
-    k_gravity = G * M_SUN  # same convention as Schutz: kGravity = G * M_sun
+    m_sun_si    = m_sun_solar    * M_SUN
+    m_planet_si = m_planet_solar * M_SUN
+    m_total_si  = m_sun_si + m_planet_si
 
-    m_sun = m_sun_solar
-    m_planet = m_planet_solar
-
-    r_sun = m_planet / (m_sun + m_planet) * binary_separation
-    r_planet = binary_separation - r_sun
-
-    omega = math.sqrt(k_gravity * (m_sun + m_planet) / binary_separation**3)
+    k_gravity = G * m_sun_si
+    r_sun     = (m_planet_si / m_total_si) * binary_separation
+    r_planet  = binary_separation - r_sun
+    omega     = np.sqrt(G * m_total_si / binary_separation**3)
 
     return k_gravity, r_sun, r_planet, omega
 
 
-def mercpert_derivatives(
-    t: float,
-    state: list[float],
-    m_sun_solar: float,
-    m_planet_solar: float,
-    binary_separation: float,
-):
+def binary_positions(t, r_sun: float, r_planet: float, omega: float):
     """
-    Compute time derivatives for Mercury in the MercPert problem.
+    Cartesian positions of the Sun and Planet at time t.
 
-    state = [x_merc, y_merc, vx_merc, vy_merc]
-    masses in solar units, separation in meters.
+    t may be a scalar or a NumPy array; the return values match its shape.
+
+    Convention (matching the original Schutz Java code):
+      Sun   starts on the negative x-axis at t = 0.
+      Planet starts on the positive x-axis at t = 0.
     """
-    x_merc, y_merc, vx_merc, vy_merc = state
+    phase    = omega * t
+    x_sun    = -r_sun    * np.cos(phase)
+    y_sun    = -r_sun    * np.sin(phase)
+    x_planet =  r_planet * np.cos(phase)
+    y_planet =  r_planet * np.sin(phase)
+    return x_sun, y_sun, x_planet, y_planet
 
-    k_gravity, r_sun, r_planet, omega = binary_parameters(
+
+# ── Right-hand side for scipy.integrate.solve_ivp ──────────────────────────
+
+def mercpert_rhs(t: float,
+                 state,
+                 m_sun_solar: float,
+                 m_planet_solar: float,
+                 binary_separation: float) -> np.ndarray:
+    """
+    Time derivative of Mercury's state vector.
+
+    State vector:  [x, y, vx, vy]
+    Returns:       [vx, vy, ax, ay]  as a plain NumPy array.
+
+    This signature is compatible with scipy.integrate.solve_ivp:
+        solve_ivp(mercpert_rhs, t_span, y0, args=(...))
+
+    The gravitational acceleration on Mercury is the vector sum of the
+    Newtonian pulls from both binary members evaluated at time t.
+    """
+    x, y, vx, vy = state
+
+    _, r_sun, r_planet, omega = binary_parameters(
         m_sun_solar, m_planet_solar, binary_separation
     )
 
-    # Binary positions at time t (circular orbits)
-    c1 = math.cos(omega * t)
-    s1 = math.sin(omega * t)
+    m_sun_si    = m_sun_solar    * M_SUN
+    m_planet_si = m_planet_solar * M_SUN
 
-    x_sun = -r_sun * c1
-    y_sun = -r_sun * s1
+    # Binary positions at the current time
+    xs, ys, xp, yp = binary_positions(t, r_sun, r_planet, omega)
 
-    x_planet = r_planet * c1
-    y_planet = r_planet * s1
+    # Displacement vectors from each binary member to Mercury
+    dx_sun    = x - xs
+    dy_sun    = y - ys
+    dx_planet = x - xp
+    dy_planet = y - yp
 
-    # Displacement vectors from Sun and Planet to Mercury
-    x_merc_sun = x_merc - x_sun
-    y_merc_sun = y_merc - y_sun
+    r_sun_merc3    = (dx_sun**2    + dy_sun**2)    ** 1.5
+    r_planet_merc3 = (dx_planet**2 + dy_planet**2) ** 1.5
 
-    x_merc_planet = x_merc - x_planet
-    y_merc_planet = y_merc - y_planet
+    ax = -G * (m_sun_si    * dx_sun    / r_sun_merc3
+             + m_planet_si * dx_planet / r_planet_merc3)
+    ay = -G * (m_sun_si    * dy_sun    / r_sun_merc3
+             + m_planet_si * dy_planet / r_planet_merc3)
 
-    r_merc_sun = math.sqrt(x_merc_sun**2 + y_merc_sun**2)
-    r_merc_planet = math.sqrt(x_merc_planet**2 + y_merc_planet**2)
-
-    r_merc_sun3 = r_merc_sun**3
-    r_merc_planet3 = r_merc_planet**3
-
-    m_sun = m_sun_solar
-    m_planet = m_planet_solar
-
-    # Acceleration of Mercury: sum of contributions from Sun and Planet
-    ax_merc = -k_gravity * (
-        m_sun * x_merc_sun / r_merc_sun3 + m_planet * x_merc_planet / r_merc_planet3
-    )
-    ay_merc = -k_gravity * (
-        m_sun * y_merc_sun / r_merc_sun3 + m_planet * y_merc_planet / r_merc_planet3
-    )
-
-    # Derivatives
-    dxdt = vx_merc
-    dydt = vy_merc
-    dvxdt = ax_merc
-    dvydt = ay_merc
-
-    return [dxdt, dydt, dvxdt, dvydt], (x_sun, y_sun, x_planet, y_planet)
+    return np.array([vx, vy, ax, ay])
