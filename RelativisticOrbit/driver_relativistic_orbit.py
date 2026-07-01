@@ -4,6 +4,12 @@ Original predictor–corrector style after Bernard F. Schutz, 2003.
 
 This module performs the time integration of the relativistic orbit,
 using a variable time-step predictor–corrector scheme and orbit counting.
+
+Bug fixes applied (2026-07-01):
+  1. Replaced component-wise eps1 test (which collapsed dt when ay0 ≈ 0
+     at orbit start) with a vector-norm test on the full acceleration change.
+  2. Corrected velocity update to use the averaged acceleration
+     0.5*(ax0+ax1)*dt1 rather than only the predictor acceleration ax0*dt1.
 """
 
 import math
@@ -152,21 +158,25 @@ def integrate_relativistic_orbit(params: RelativisticOrbitParams) -> Relativisti
                 break
 
         # --- Time-step accuracy control (eps1) ---
-        # If acceleration changed too much, reduce dt1.
-        accel_change = 0.0
-        if abs(ax0) > 0.0:
-            accel_change = max(accel_change, abs(ax1 - ax0) / abs(ax0))
-        if abs(ay0) > 0.0:
-            accel_change = max(accel_change, abs(ay1 - ay0) / abs(ay0))
+        # FIX 1: Use vector-norm test instead of component-wise test.
+        # The original component-wise test divided by |ay0|, which is exactly
+        # zero at orbit start (particle on x-axis), causing dt to collapse
+        # immediately to ~0.49 s and never recover.
+        a0_norm = math.hypot(ax0, ay0)
+        da_norm = math.hypot(ax1 - ax0, ay1 - ay0)
+        accel_change = da_norm / a0_norm if a0_norm > 0.0 else 0.0
 
         if accel_change > params.eps1:
             dt1 *= 0.5
             # recompute with smaller step on next iteration
             continue
 
-        # Accept step: update velocities and positions
-        v += dv
-        u += du
+        # Accept step: update velocities and positions.
+        # FIX 2: Use averaged acceleration for velocity update.
+        # The original code used only the predictor acceleration (ax0*dt1),
+        # which is inconsistent with the corrector's refined position.
+        v += 0.5 * (ax0 + ax1) * dt1
+        u += 0.5 * (ay0 + ay1) * dt1
         x0 = x1
         y0 = y1
         ax0, ay0 = ax1, ay1
