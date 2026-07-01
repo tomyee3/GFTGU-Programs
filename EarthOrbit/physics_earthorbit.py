@@ -1,39 +1,55 @@
 """
 physics_earthorbit.py
 
-Physics routines for EarthOrbit, rewritten from Bernard Schutz's
-Triana Java program under the Creative Commons BY-NC-SA 1.0 license.
+Physical constants and gravitational acceleration law for the EarthOrbit
+simulation (Newton's Cannon thought experiment).
 
-State vector:
-    x  — x-position (meters)
-    y  — y-position (meters)
-    u  — x-velocity (m/s)
-    v  — y-velocity (m/s)
+The only literal numbers in this module are universal physical constants
+and Earth's measured surface parameters.
 
-Gravity:
-    Magnitude g = 9.8 m/s^2 (constant, as in the original program)
-    Direction always points toward the center of the Earth.
+Force law: a = g * (R_Earth / r)^2  directed toward center
+           = g * R_Earth^2 / r^2    (correct inverse-square law)
+
+This equals g = 9.8 m/s^2 at the surface (r = R_Earth) and falls off
+correctly with altitude, producing closed elliptical orbits.
 """
 
-import numpy as np
+import math
 
-# Acceleration of gravity near Earth's surface (m/s^2)
-g = 9.8
+# Physical constants / Earth parameters
+G_SURFACE = 9.8            # gravitational acceleration at Earth's surface (m/s^2)
+R_EARTH   = 6_378_200.0   # mean radius of the Earth (m)
 
-# Radius of Earth (meters)
-rEarth = 6_378_200.0
+# Composite constant: k = g * R^2  (analogous to GM in the Orbit program)
+# Numerically equals GM_Earth ≈ 3.987e14 m^3/s^2
+_K = G_SURFACE * R_EARTH * R_EARTH
 
 
-def compute_acceleration(x, y):
+def compute_acceleration(x: float, y: float) -> tuple[float, float]:
     """
-    Compute acceleration components toward Earth's center.
+    Compute the gravitational acceleration components at position (x, y).
 
-    Equivalent to Schutz's Java code:
-        r = sqrt(x*x + y*y)
-        ax = -g * x / r
-        ay = -g * y / r
+    Uses the correct inverse-square law:
+        |a| = g * (R_Earth / r)^2 = k / r^2
+
+    so that the acceleration equals g at the surface and falls off as 1/r^2,
+    producing closed Keplerian ellipses for all eccentricities.
+
+    Parameters
+    ----------
+    x, y : float
+        Position of the projectile in metres (origin = Earth's centre).
+
+    Returns
+    -------
+    ax, ay : float
+        Acceleration components in m/s^2.
     """
-    r = np.sqrt(x*x + y*y)
-    ax = -g * x / r
-    ay = -g * y / r
+    r2 = x * x + y * y
+    r  = math.sqrt(r2)
+    r3 = r * r2                  # r^3
+
+    ax = -_K * x / r3
+    ay = -_K * y / r3
+
     return ax, ay
